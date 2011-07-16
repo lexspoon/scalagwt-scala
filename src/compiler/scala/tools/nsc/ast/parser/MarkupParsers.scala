@@ -76,7 +76,7 @@ trait MarkupParsers {
     var tmppos : Position = NoPosition
     def ch = input.ch
     /** this method assign the next character to ch and advances in input */
-    def nextch() { input.nextChar() }
+    def nextch() = { input.nextChar(); ch }
     def ch_returning_nextch = { val result = ch; input.nextChar(); result }
     
     def mkProcInstr(position: Position, name: String, text: String): Tree =
