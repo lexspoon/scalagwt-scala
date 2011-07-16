@@ -1,6 +1,6 @@
 /*                     __                                               *\
 **     ________ ___   / /  ___     Scala Ant Tasks                      **
-**    / __/ __// _ | / /  / _ |    (c) 2005-2010, LAMP/EPFL             **
+**    / __/ __// _ | / /  / _ |    (c) 2005-2011, LAMP/EPFL             **
 **  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
 ** /____/\___/_/ |_/____/_/ | |                                         **
 **                          |/                                          **
@@ -13,12 +13,12 @@ package sabbus
 import java.io.File
 import java.io.FileWriter
 import org.apache.tools.ant.Project
-import org.apache.tools.ant.taskdefs.{ MatchingTask, Java }
+import org.apache.tools.ant.taskdefs.Java
 import org.apache.tools.ant.util.{ GlobPatternMapper, SourceFileScanner }
 import scala.tools.nsc.io
 import scala.tools.nsc.util.ScalaClassLoader
 
-class ScalacFork extends MatchingTask with ScalacShared with TaskArgs {
+class ScalacFork extends ScalaMatchingTask with ScalacShared with TaskArgs {
   private def originOfThis: String =
     ScalaClassLoader.originOfClass(classOf[ScalacFork]) map (_.toString) getOrElse "<unknown>"
   
@@ -42,15 +42,20 @@ class ScalacFork extends MatchingTask with ScalacShared with TaskArgs {
     argfile = Some(input)
   }
 
+  def setVerbose(input: Boolean) {
+    verbose = Some(input)
+  }
+
   private var sourceDir: Option[File] = None
   private var failOnError: Boolean = true
   private var timeout: Option[Long] = None
   private var jvmArgs: Option[String] = None
   private var argfile: Option[File] = None
+  private var verbose: Option[Boolean] = None
   
   private def createMapper() = {
     val mapper = new GlobPatternMapper()
-    val extension = if (isMSIL) "*.msil" else "*.class"
+    val extension = if (isMSIL) "*.msil" else if (isJribble) "*.jribble" else "*.class"
     mapper setTo extension
     mapper setFrom "*.scala"
     
@@ -62,9 +67,9 @@ class ScalacFork extends MatchingTask with ScalacShared with TaskArgs {
     
     log("Executing ant task scalacfork, origin: %s".format(originOfThis), Project.MSG_VERBOSE)
 
-    val compilerPath = this.compilerPath getOrElse error("Mandatory attribute 'compilerpath' is not set.")
-    val sourceDir = this.sourceDir getOrElse error("Mandatory attribute 'srcdir' is not set.")
-    val destinationDir = this.destinationDir getOrElse error("Mandatory attribute 'destdir' is not set.")
+    val compilerPath = this.compilerPath getOrElse sys.error("Mandatory attribute 'compilerpath' is not set.")
+    val sourceDir = this.sourceDir getOrElse sys.error("Mandatory attribute 'srcdir' is not set.")
+    val destinationDir = this.destinationDir getOrElse sys.error("Mandatory attribute 'destdir' is not set.")
     
     val settings = new Settings
     settings.d = destinationDir
@@ -72,6 +77,7 @@ class ScalacFork extends MatchingTask with ScalacShared with TaskArgs {
     compTarget foreach (settings.target = _)
     compilationPath foreach (settings.classpath = _)
     sourcePath foreach (settings.sourcepath = _)
+    verbose foreach { settings.verbose = _ }
     params foreach (settings.more = _)
     
     if (isMSIL)
@@ -114,7 +120,7 @@ class ScalacFork extends MatchingTask with ScalacShared with TaskArgs {
     val res = execWithArgFiles(java, paths)
 
     if (failOnError && res != 0)
-      error("Compilation failed because of an internal compiler error;"+
+      sys.error("Compilation failed because of an internal compiler error;"+
             " see the error output for details.")
   }
 }

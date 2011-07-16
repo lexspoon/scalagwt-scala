@@ -1,0 +1,31 @@
+public class LFoo; extends Ljava/lang/Object; implements Lscala/ScalaObject; {
+  public final static I; y() { return LFoo$;.MODULE$.(LFoo$;::y()I;)(); }
+  public final static I; x() { return LFoo$;.MODULE$.(LFoo$;::x()I;)(); }
+  
+  
+  private I; referCompanionVal1$u0020;
+  
+  public I; referCompanionVal1() {
+    return this.(LFoo;)referCompanionVal1$u0020;
+  }
+  
+  public I; referCompanionVal2() {
+    return LFoo$;.MODULE$.(LFoo$;::x()I;)();
+  }
+  
+  private I; referCompanionDef1$u0020;
+  
+  public I; referCompanionDef1() {
+    return this.(LFoo;)referCompanionDef1$u0020;
+  }
+  
+  public I; referCompanionDef2() {
+    return LFoo$;.MODULE$.(LFoo$;::y()I;)();
+  }
+  
+  public this() {
+    (Ljava/lang/Object;::super()V;)();
+    this.(LFoo;)referCompanionVal1$u0020 = LFoo$;.MODULE$.(LFoo$;::x()I;)();
+    this.(LFoo;)referCompanionDef1$u0020 = LFoo$;.MODULE$.(LFoo$;::y()I;)();
+  }
+}

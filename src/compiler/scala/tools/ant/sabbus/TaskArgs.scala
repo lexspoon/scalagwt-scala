@@ -1,6 +1,6 @@
 /*                     __                                               *\
 **     ________ ___   / /  ___     Scala Ant Tasks                      **
-**    / __/ __// _ | / /  / _ |    (c) 2005-2010, LAMP/EPFL             **
+**    / __/ __// _ | / /  / _ |    (c) 2005-2011, LAMP/EPFL             **
 **  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
 ** /____/\___/_/ |_/____/_/ | |                                         **
 **                          |/                                          **
@@ -91,4 +91,5 @@ trait TaskArgs extends CompilationPathProperty {
   protected var destinationDir: Option[File] = None
   
   def isMSIL = compTarget exists (_ == "msil")
+  def isJribble = compTarget exists (_ == "jribble")
 }

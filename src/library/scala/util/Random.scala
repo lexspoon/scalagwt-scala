@@ -1,23 +1,22 @@
 /*                     __                                               *\
 **     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2006-2010, LAMP/EPFL             **
+**    / __/ __// _ | / /  / _ |    (c) 2006-2011, LAMP/EPFL             **
 **  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
 ** /____/\___/_/ |_/____/_/ | |                                         **
 **                          |/                                          **
 \*                                                                      */
 
-
-
 package scala.util
 
-import collection.immutable.List
+import collection.mutable.ArrayBuffer
+import collection.generic.CanBuildFrom
+import scala.collection.immutable.{ List, Stream }
 
 /**
  *  @author Stephane Micheloud
  *
  */
 class Random(val self: java.util.Random) {
-
   /** Creates a new random number generator using a single long seed. */
   def this(seed: Long) = this(new java.util.Random(seed))
 
@@ -92,33 +91,13 @@ class Random(val self: java.util.Random) {
    *  from the ASCII range 33-126.
    */
   def nextPrintableChar(): Char = {
-    val (low, high) = (33, 126)
+    val low  = 33
+    val high = 127
     (self.nextInt(high - low) + low).toChar
   }
 
   def setSeed(seed: Long) { self.setSeed(seed) }
-}
-
-/** The object <code>Random</code> offers a default implementation
- *  of scala.util.Random and random-related convenience methods.
- *
- *  @since 2.8
- */
-object Random extends Random {
-  import collection.mutable.ArrayBuffer
-  import collection.generic.CanBuildFrom
-  
-  /** Returns a Stream of pseudorandomly chosen alphanumeric characters,
-   *  equally chosen from A-Z, a-z, and 0-9.
-   * 
-   *  @since 2.8
-   */
-  def alphanumeric: Stream[Char] = {
-    def isAlphaNum(c: Char) = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
-
-    Stream continually nextPrintableChar filter isAlphaNum
-  }
-
+    
   /** Returns a new collection of the same type in a randomly chosen order.
    * 
    *  @param  coll    the TraversableOnce to shuffle
@@ -140,4 +119,25 @@ object Random extends Random {
     
     bf(xs) ++= buf result
   }
+
+}
+
+/** The object <code>Random</code> offers a default implementation
+ *  of scala.util.Random and random-related convenience methods.
+ *
+ *  @since 2.8
+ */
+object Random extends Random {
+  
+  /** Returns a Stream of pseudorandomly chosen alphanumeric characters,
+   *  equally chosen from A-Z, a-z, and 0-9.
+   * 
+   *  @since 2.8
+   */
+  def alphanumeric: Stream[Char] = {
+    def isAlphaNum(c: Char) = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+
+    Stream continually nextPrintableChar filter isAlphaNum
+  }
+
 }

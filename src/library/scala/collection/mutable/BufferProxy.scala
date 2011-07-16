@@ -1,6 +1,6 @@
 /*                     __                                               *\
 **     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2010, LAMP/EPFL             **
+**    / __/ __// _ | / /  / _ |    (c) 2003-2011, LAMP/EPFL             **
 **  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
 ** /____/\___/_/ |_/____/_/ | |                                         **
 **                          |/                                          **
@@ -45,7 +45,7 @@ trait BufferProxy[A] extends Buffer[A] with Proxy {
    *  @return      the updated buffer.
    */
   @deprecated("Use += instead if you intend to add by side effect to an existing collection.\n"+
-              "Use `clone() ++=' if you intend to create a new collection.")
+              "Use `clone() ++=' if you intend to create a new collection.", "2.8.0")
   override def +(elem: A): Buffer[A] = self.+(elem)
 
   /** Append a single element to this buffer.
@@ -64,8 +64,8 @@ trait BufferProxy[A] extends Buffer[A] with Proxy {
    *  @return      the updated buffer.
    */
   @deprecated("Use ++= instead if you intend to add by side effect to an existing collection.\n"+
-              "Use `clone() ++=` if you intend to create a new collection.")
-  override def ++(xs: TraversableOnce[A]): Buffer[A] = self.++(xs)
+              "Use `clone() ++=` if you intend to create a new collection.", "2.8.0")
+  override def ++(xs: GenTraversableOnce[A]): Buffer[A] = self.++(xs)
 
   /** Appends a number of elements provided by a traversable object.
    *
@@ -125,16 +125,20 @@ trait BufferProxy[A] extends Buffer[A] with Proxy {
    *  @param n     the index where a new element will be inserted.
    *  @param iter  the iterable object providing all elements to insert.
    */
-  def insertAll(n: Int, iter: scala.collection.Iterable[A]): Unit = self.insertAll(n, iter)
+  def insertAll(n: Int, iter: scala.collection.Iterable[A]) {
+    self.insertAll(n, iter)
+  }
 
-  override def insertAll(n: Int, iter: scala.collection.Traversable[A]): Unit = self.insertAll(n, iter)
+  override def insertAll(n: Int, iter: scala.collection.Traversable[A]) {
+    self.insertAll(n, iter)
+  }
 
   /** Replace element at index `n` with the new element `newelem`.
    *
    *  @param n       the index of the element to replace.
    *  @param newelem the new element.
    */
-  def update(n: Int, newelem: A): Unit = self.update(n, newelem)
+  def update(n: Int, newelem: A) { self.update(n, newelem) }
 
   /** Removes the element on a given index position.
    *
