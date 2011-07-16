@@ -29,6 +29,13 @@ trait JribbleFormatting {
     val global: JribbleFormatting.this.global.type
   }
 
+  private val keywords = Set("public", "final", "abstract", "class", "interface",
+                              "extends", "implements", "static", "super", "this",
+                              "new", "false", "true", "if", "else", "instanceof",
+                              "cast", "private", "try", "catch", "finally", "while",
+                              "continue", "break", "switch", "default", "return",
+                              "protected", "throw")
+
   /** Return the suffix of a class name */
   //copied from GenJVM
   protected def moduleSuffix(sym: Symbol) = {
@@ -38,14 +45,16 @@ trait JribbleFormatting {
     else "";
   }
 
+  protected def escapeKeyword(s: String): String = if (keywords contains s) "`"+s+"`" else s
+
   protected def jribbleName(sym: Symbol, fullyQualify: Boolean, suffix: Symbol => String): String = {
     //copy of AbsSymbol.fullName adapted to jribble syntax for fully qualified names which is
     // com/foo/Bar
-    def fullName = {
+    def fullName(sym: Symbol): String = {
       val separator = '/'
-      if (sym.isRoot || sym.isRootPackage || sym == scala.reflect.NoSymbol) sym.toString
-      else if (sym.owner.isEmptyPackageClass) sym.encodedName
-      else sym.owner.enclClass.fullName(separator) + separator + sym.encodedName
+      if (sym.isRoot || sym.isRootPackage || sym == scala.reflect.NoSymbol) escapeKeyword(sym.toString)
+      else if (sym.owner.isEffectiveRoot) escapeKeyword(sym.encodedName)
+      else fullName(sym.owner.enclClass) + separator + escapeKeyword(sym.encodedName)
     }
 
     // TODO(spoon): why the special cases?  double check that they are needed
@@ -56,7 +65,7 @@ trait JribbleFormatting {
     else if (isJribblePrimitive(sym.tpe))
       return jribbleName(sym.tpe)
 
-    if (fullyQualify) "L" + fullName + suffix(sym) + ";" else sym.simpleName.toString
+    if (fullyQualify) "L" + fullName(sym) + suffix(sym) + ";" else escapeKeyword(sym.simpleName.toString)
   }
   
   protected def jribbleShortName(sym: Symbol): String =
@@ -74,7 +83,7 @@ trait JribbleFormatting {
         case SHORT           => "S;"
         case CHAR            => "C;"
         case INT             => "I;"
-        case LONG            => "L;"
+        case LONG            => "J;"
         case FLOAT           => "F;"
         case DOUBLE          => "D;"
         case REFERENCE(cls)  => jribbleName(cls)
@@ -87,15 +96,15 @@ trait JribbleFormatting {
     jribbleName(sym, true, _ => "")
 
   protected def jribbleMethodSignature(s: Symbol): String = {
-    val paramsTypes = s.tpe.paramTypes.map(_.typeSymbol).map(jribbleName)
+    val paramsTypes = s.tpe.paramTypes.map(jribbleName)
     val on = jribbleName(s.owner)
-    val name = s.name.encode.toString
-    val returnType = jribbleName(s.tpe.resultType.typeSymbol)
+    val name = escapeKeyword(s.name.encode.toString)
+    val returnType = jribbleName(s.tpe.resultType)
     "(" + on + "::" + name + (paramsTypes).mkString("(", "", ")") + returnType + ")"
   }
 
   protected def jribbleSuperConstructorSignature(s: Symbol): String = {
-    val paramsTypes = s.tpe.paramTypes.map(_.typeSymbol).map(jribbleName)
+    val paramsTypes = s.tpe.paramTypes.map(jribbleName)
     val on = jribbleName(s.owner)
     val name = "super"
     val returnType = "V;"
@@ -103,7 +112,7 @@ trait JribbleFormatting {
   }
 
   protected def jribbleConstructorSignature(s: Symbol): String = {
-    val paramsTypes = s.tpe.paramTypes.map(_.typeSymbol).map(jribbleName)
+    val paramsTypes = s.tpe.paramTypes.map(jribbleName)
     val on = jribbleName(s.owner)
     val name = "this"
     val returnType = "V;"
@@ -156,7 +165,7 @@ trait JribbleFormatting {
 	  case ZAND => "&&"                          // x && y
 	
 	  // Array operations
-	  case LENGTH => ""                        // x.length
+	  case LENGTH => ".<length>"               // x.length
 	  case APPLY  => ""                        // x(y)
 	  case UPDATE => ""                        // x(y) => ""z
 	

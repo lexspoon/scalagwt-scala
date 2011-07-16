@@ -102,7 +102,7 @@ with JribbleNormalization
     def allocLocal(tpe: Type, pos: scala.tools.nsc.util.Position): Symbol = {
       assert (tpe != UnitClass.tpe) // don't create a unit variable
       assert (tpe != null)
-      val newLocal = currentMethodSym.newValue(pos, cunit.fresh.newName(pos))
+      val newLocal = currentMethodSym.newValue(pos, cunit.fresh.newName())
       newLocal.setInfo(tpe)
       newLocal
     }
@@ -217,6 +217,11 @@ with JribbleNormalization
             
         // TODO(spoon): reuse the original tree when possible
         mkBlock(newBlockStats.toList, unitLiteral)
+      case tree@ValDef(mods, name, tpt, rhs) if isLocalValDef(tree) && mods.isPrivate =>
+        import scala.reflect.generic.Flags._
+        val newTree = treeCopy.ValDef(tree, mods &~ PRIVATE, name, tpt, rhs)
+        newTree.symbol.flags = newTree.symbol.flags & ~ PRIVATE
+        transform(newTree)
       case ValDef(mods, name, tpt, rhs) =>
         treeCopy.ValDef(tree, mods, name, tpt, transform(rhs))
       case Try(block, catches, finalizer) =>
@@ -248,16 +253,11 @@ with JribbleNormalization
         currentMethodSym = savedMethodSym
         res
       case tree@LabelDef(name, params, rhs) =>
-        val paramLocals = params.map { x =>
-          val newLocal = currentMethodSym.newValue(x.pos, x.name)
-          newLocal.setInfo(x.tpe)
-          newLocal
-        }
+        val paramLocals = params.map(x => allocLocal(x.tpe, x.pos))
         newStats ++= paramLocals map (ValDef)
         recordLabelDefDuring(tree.symbol, paramLocals) {
           if (isUnit(rhs.tpe)) {
-            newStats += treeCopy.LabelDef(tree, name, params, transformStatement(explicitBlock(rhs)))
-            unitLiteral
+            treeCopy.LabelDef(tree, name, params, transformStatement(explicitBlock(rhs)))
           } else {
             val resultLocal = allocLocal(rhs.tpe, tree.pos)
             newStats += ValDef(resultLocal)
@@ -357,6 +357,14 @@ with JribbleNormalization
           mkApply(treeGen.mkAttributedRef(global.platform.externalEquals), receiver :: args)
         }
       }
+      //jribble doesn't support synchronized construct so we just get rid of it
+      case Apply(fun @ Select(receiver, name), args) if isSynchronized(fun) =>
+        assert(args.tail.isEmpty)
+        transform(args.head)
+      //type coercion in jribble is achieved through casting like in Java
+      case tree@Apply(fun @ Select(receiver, name), args) if isCoercion(fun.symbol) =>
+        assert(args.isEmpty)
+        treeGen.mkCast(transform(receiver), tree.tpe)
       case Apply(fun, args) =>
         val funT :: argsT = transformTrees(fun :: args)
         treeCopy.Apply(tree, funT, argsT)
@@ -369,6 +377,18 @@ with JribbleNormalization
       if (isPrimitive(fun.symbol)) {
         (getPrimitive(fun.symbol) == EQ) && (receiver.tpe <:< definitions.AnyRefClass.tpe)
       } else false
+    }
+
+    def isSynchronized(fun: Select) = {
+      import scalaPrimitives._
+      isPrimitive(fun.symbol) && (getPrimitive(fun.symbol) == SYNCHRONIZED)
+    }
+
+    def isLocalValDef(tree: ValDef) = !tree.symbol.owner.isClass
+
+    def isCoercion(sym: Symbol): Boolean = {
+      import scalaPrimitives._
+      isPrimitive(sym) && scalaPrimitives.isCoercion(getPrimitive(sym))
     }
   }
 }

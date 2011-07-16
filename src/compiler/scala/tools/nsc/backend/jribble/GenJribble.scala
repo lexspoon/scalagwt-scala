@@ -59,7 +59,7 @@ with JribbleNormalization
         getFile(clazz, fileSuffix)
       }
       val out = new PrintWriter(new FileOutputStream(file))
-      new JribblePrinter(out, unit)
+      new JribblePrinter(clazz, out, unit)
     }
       
     private def gen(tree: Tree, unit: CompilationUnit): Unit = tree match {
@@ -107,35 +107,92 @@ with JribbleNormalization
       
       print("public final class "); print(jribbleModuleMirrorName(clazz))
       print(" {"); indent; println
-      for (m <- clazz.tpe.nonPrivateMembers // TODO(spoon) -- non-private, or public?
-           if m.owner != definitions.ObjectClass && !m.hasFlag(PROTECTED) &&
-           m.isMethod && !m.hasFlag(CASE) && !m.isConstructor && !m.isStaticMember)
-      {
-        print("public final static "); print(m.tpe.resultType); print(" ") 
-        print(m.name); print("(");
-        val paramTypes = m.tpe.paramTypes
-        for (i <- 0 until paramTypes.length) {
-          if (i > 0) print(", ") 
-          print(paramTypes(i)); print(" x_" + i)
-        }
-        print(") { ")
-        if (!isUnit(m.tpe.resultType))
-          print("return ") 
-        print(jribbleName(clazz)); print("."); print(nme.MODULE_INSTANCE_FIELD)
-        print("."); print(jribbleMethodSignature(m)); print("(")
-        for (i <- 0 until paramTypes.length) {
-          if (i > 0) print(", ");
-          print("x_" + i)
-        }
-        print("); }") 
-        println
-      }
+      addForwarders(printer)(clazz)
       undent; println; print("}"); println
     }
 
   }
 
-  private final class JribblePrinter(out: PrintWriter, unit: CompilationUnit) extends TreePrinter(out) {
+  /**
+   * Adds static forwarders for methods defined in modules (objects).
+   *
+   * Copied from GenJVM.
+   */
+  def addForwarders(printer: JribblePrinter)(module: Symbol): Unit = {
+    def conflictsIn(cls: Symbol, name: Name) =
+        cls.info.members exists (_.name == name)
+
+    /** List of parents shared by both class and module, so we don't add forwarders
+     *  for methods defined there - bug #1804 */
+    lazy val commonParents = {
+      val cps = module.info.baseClasses
+      val mps = module.companionClass.info.baseClasses
+      cps.filter(mps contains)
+    }
+    /* The setter doesn't show up in members so we inspect the name
+    * ... and clearly it helps to know how the name is encoded, see ticket #3004.
+    * This logic is grossly inadequate! Name mangling needs a devotee.
+    */
+    def conflictsInCommonParent(name: Name) =
+      commonParents exists { cp =>
+        (name startsWith (cp.name + "$")) || (name containsName ("$" + cp.name + "$"))
+      }
+
+    /** Should method `m' get a forwarder in the mirror class? */
+    def shouldForward(m: Symbol): Boolean =
+      atPhase(currentRun.picklerPhase) (
+        m.owner != definitions.ObjectClass
+          && m.isMethod
+          && !m.hasFlag(CASE | PRIVATE | PROTECTED | DEFERRED | SPECIALIZED)
+          && !m.isConstructor
+          && !m.isStaticMember
+          && !(m.owner == definitions.AnyClass)
+          && !module.isSubClass(module.companionClass)
+          && !conflictsIn(definitions.ObjectClass, m.name)
+          && !conflictsInCommonParent(m.name)
+          && !conflictsIn(module.companionClass, m.name)
+      )
+
+    assert(module.isModuleClass)
+    if (settings.debug.value)
+      log("Dumping mirror class for object: " + module);
+
+    for (m <- module.info.nonPrivateMembers; if shouldForward(m)) {
+      log("Adding static forwarder '%s' to '%s'".format(m, module))
+      addForwarder(printer)(module, m)
+    }
+  }
+
+  //TODO(grek): Using raw output can lead to bad output. It would be probably
+  //a better idea to generate a Tree and use JribblePrinter to print it.
+  //Another idea would be generating jribble ast once we switch to it from
+  //printing text representation of jribble.
+  def addForwarder(printer: JribblePrinter)(module: Symbol, m: Symbol): Unit = {
+    import printer.{print, println}
+    print("public final static "); print(m.tpe.resultType); print(" ")
+    print(m.name); print("(");
+    val paramTypes = m.tpe.paramTypes
+    for (i <- 0 until paramTypes.length) {
+      if (i > 0) print(", ")
+      print(paramTypes(i)); print(" x_" + i)
+    }
+    print(") { ")
+    if (!isUnit(m.tpe.resultType))
+      print("return ")
+    print(jribbleName(module)); print("."); print(nme.MODULE_INSTANCE_FIELD)
+    print("."); print(jribbleMethodSignature(m)); print("(")
+    for (i <- 0 until paramTypes.length) {
+      if (i > 0) print(", ");
+      print("x_" + i)
+    }
+    print("); }")
+    println
+  }
+
+  /**
+   * clazz stores symbol of a class this printer is printing
+   */
+  private final class JribblePrinter(clazz: Symbol, out: PrintWriter, unit: CompilationUnit) extends TreePrinter(out) {
     /**
      * Symbols in scope that are for a while loop.  Apply's to
      * them should be printed as continue's.
@@ -144,17 +201,18 @@ with JribbleNormalization
 
     override def printRaw(tree: Tree): Unit = printRaw(tree, false)
     
-    override def print(name: Name) = super.print(name.encode)
+    override def print(name: Name) = print(escapeKeyword(name.encode.toString))
 
     def printStats(stats: List[Tree]) =
     	printSeq(stats) {s => print(s); if (needsSemi(s)) print(";")} {println}
 
     
-    override def symName(tree: Tree, name: Name): String =
+    override def symName(tree: Tree, name: Name): String = escapeKeyword {
       if (tree.symbol != null && tree.symbol != NoSymbol) {
         ((if (tree.symbol.isMixinConstructor) "/*"+tree.symbol.owner.name+"*/" else "") +
          tree.symbol.simpleName.encode.toString)
       } else name.encode.toString;
+    }
     
     def logIfException[T](tree: Tree)(process: =>T): T =
       try {
@@ -163,7 +221,7 @@ with JribbleNormalization
       case ex:Error =>
         Console.println("Exception while traversing: " + tree)
         throw ex
-      } 
+      }
 
     // TODO(spoon): read all cases carefully.
     // TODO(spoon): sort the cases in alphabetical order
@@ -188,8 +246,11 @@ with JribbleNormalization
           case x :: xs => print(x); print(sep); printSep(xs, sep)
         }
         if (isInterface(tree.symbol)) {
-          print(" extends ")
-          printSep(parents.map(_.tpe))
+          val interfaceParents = parents.map(_.tpe).filterNot(_ == definitions.ObjectClass.tpe)
+          if (!interfaceParents.isEmpty) {
+            print(" extends ")
+            printSep(interfaceParents)
+          }
         } else {
           superclass foreach { x =>
             print(" extends ")
@@ -207,6 +268,23 @@ with JribbleNormalization
           val constructorSymbol = definitions.getMember(tree.symbol, nme.CONSTRUCTOR)
           print("public static " + jribbleName(tree.symbol) + " " +
                     nme.MODULE_INSTANCE_FIELD + " = new " + jribbleConstructorSignature(constructorSymbol) + "();")
+        } else {
+          //logic that adds static forwarders. Copied from GenJVM (see genClass method)
+          val lmoc = tree.symbol.companionModule
+          // it must be a top level class (name contains no $s)
+          def isCandidateForForwarders(sym: Symbol): Boolean =
+            atPhase (currentRun.picklerPhase.next) {
+              !(sym.name.toString contains '$') && (sym hasFlag MODULE) && !sym.isImplClass && !sym.isNestedClass
+            }
+
+          // add static forwarders if there are no name conflicts; see bugs #363 and #1735
+          if (lmoc != NoSymbol && !tree.symbol.hasFlag(INTERFACE)) {
+            if (isCandidateForForwarders(lmoc) && !settings.noForwarders.value) {
+              println
+              log("Adding forwarders to existing class '%s' found in module '%s'".format(tree.symbol, lmoc))
+              addForwarders(this)(lmoc.moduleClass)
+            }
+          }
         }
         for(member <- body) {
           println; println;
@@ -220,7 +298,7 @@ with JribbleNormalization
         printFlags(tree.symbol)
         print(tp.tpe)
         print(" ")
-        print(tree.symbol.simpleName) 
+        print(tree.symbol.simpleName)
         if (!rhs.isEmpty) { print(" = "); print(rhs) }
         print(";")
 
@@ -267,29 +345,42 @@ with JribbleNormalization
       case tree:Apply if labelSyms.contains(tree.symbol) =>
         print("continue "); print(tree.symbol.name)
         
-      case Apply(t @ Select(New(tpt), nme.CONSTRUCTOR), args) if (tpt.tpe.typeSymbol == definitions.ArrayClass) =>
-        tpt.tpe match {
-          case TypeRef(_, _, List(elemType)) =>
-            print("new "); print(elemType)
-            print("["); print(args.head); print("]")
+      case Apply(t @ Select(New(tpt), nme.CONSTRUCTOR), args) if (tpt.tpe.typeSymbol == definitions.ArrayClass) => {
+        def extractDims(tpe: Type): (Int, Type) = if (tpe.typeSymbol == definitions.ArrayClass) {
+          tpe match {
+            case TypeRef(_, _, List(elemType)) => {
+              val (dims, tpe) = extractDims(elemType)
+              (dims+1, tpe)
+            }
+          }
+        } else (0, tpe)
+        val (dims, elemType) = extractDims(tpt.tpe)
+        assert(args.size <= dims)
+        print("new "); print(elemType);
+        (args.map(Some(_)) ::: List.fill(dims-args.size)(None)) foreach {
+          case Some(arg) => print("["); print(arg); print("]")
+          case None => print("[]")
         }
+      }
 
       case Apply(fun @ Select(receiver, name), args) if isPrimitive(fun.symbol) => {
         val prim = getPrimitive(fun.symbol) 
         prim match {
           case POS | NEG | NOT | ZNOT =>
             print(jribblePrimName(prim)); print("("); print(receiver); print(")") 
-          case ADD | SUB | MUL | DIV | MOD | OR | XOR | AND | ID |
+          case ADD | SUB | MUL | DIV | MOD | OR | XOR | AND | ID | NI |
                LSL | LSR | ASR |EQ | NE | LT | LE | GT | GE | ZOR | ZAND |
                CONCAT =>
             // TODO(spoon): this does not seem to parenthesize for precedence handling
-            print(receiver); print(" "); print(jribblePrimName(prim)); print(" "); print(args.head)
+            //TODO(grek): printing parenthesis in every case not matter if needed or not
+            print("(");
+            print(receiver); print(" "); print(jribblePrimName(prim)); print(" "); print(args.head);
+            print(")");
           case APPLY => print(receiver); print("["); print(args.head); print("]")
           case UPDATE =>
             print(receiver); print("["); print(args.head); print("] = ") 
             print(args.tail.head); print("")
-          case SYNCHRONIZED => print("synchronized ("); print(receiver); print(") {") 
-            indent; println; print(args.head); undent; println; print("}") 
+          case LENGTH => print(receiver); print(jribblePrimName(prim));
           case prim => print("Unhandled primitive ("+prim+") for "+tree)
         }
       }
@@ -317,9 +408,12 @@ with JribbleNormalization
         printParams(args)
 
       case Apply(fun @ Select(_: New, nme.CONSTRUCTOR), args) if tree.symbol.isConstructor =>
+        //TODO(grek): printing parenthesis in every case not matter if needed or not
+        print("(")
         print("new ");
         print(jribbleConstructorSignature(fun.symbol))
         printParams(args)
+        print(")")
 
       case tree@Apply(Select(_: Super, nme.CONSTRUCTOR), args) if tree.symbol.isConstructor =>
         print(jribbleSuperConstructorSignature(tree.symbol))
@@ -337,8 +431,15 @@ with JribbleNormalization
         printParams(args)
         
       case tree@Select(qualifier, selector) if tree.symbol.isModule =>
-        printLoadModule(tree.symbol) // TODO(spoon): handle other loadModule cases from GenIcodes
-        
+        printLoadModule(tree.symbol)
+
+      //copied from GenICode, this might refer to ModuleClass (including java class if static field
+      //is being accessed) so we have to check if symbol is ModuleClass and if it's not equal to
+      //enclosing class. If so we just treat it as a qualifier for static reference so we just
+      //print symbol's name
+      case tree@This(_) if tree.symbol.isModuleClass && tree.symbol != clazz =>
+        printLoadModule(tree.symbol)
+
       case This(_) => print("this")
 
       case Super(_, _) => print("super")
@@ -384,8 +485,7 @@ with JribbleNormalization
           }
         if (finalizer != EmptyTree) {
           print(" finally ")
-          indent; print(finalizer); undent; println
-          print("}")
+          printInBraces(finalizer, ret);
         }
 
       case tree@Match(selector, cases) => {
@@ -412,11 +512,13 @@ with JribbleNormalization
         }
         def printBody(body: Tree) = body match {
           case Block(stats, expr) if (expr equalsStructure Literal(())) =>
+            print(" {");
             indent;
             println;
             printStats(stats)
             println; print("break;");
-            undent;
+            undent; println;
+            print("}"); println;
           case x => Predef.error("Unrecognized body in Match node " + x)
         }
         print("switch ("); print(ident); print(")");
@@ -440,15 +542,37 @@ with JribbleNormalization
         print(tree.tpe)
 
       case tree@Apply(_: Ident, _) => unit.error(tree.pos, "Jumping to labels not handled by jribble")
+      case Literal(Constant(x: Long)) =>
+        print(x.toString); print("L")
+      case Literal(Constant(x: Double)) =>
+        print(x.toString); print("D")
+      case Literal(Constant(x: Float)) =>
+        print(x.toString); print("F")
+      //handles classOf[Foo] expressions
+      case Literal(c@Constant(x: Type)) if c.tag == ClassTag =>
+        print(jribbleName(x)); print(".class")
       case tree: Literal => super.printRaw(tree)
-      case tree: Return => super.printRaw(tree)
+      case tree: Ident if !tree.symbol.isPackage && tree.symbol.isModule =>
+        printLoadModule(tree.symbol)
+      case Return(expr) =>
+        print("return");
+        val unitLiteral = Literal(Constant())
+        //in jribble unboxed unit is being returned by omitting return value altogether
+        if (!(expr equalsStructure unitLiteral)) { print(" "); print(expr) }
       case tree: Ident => super.printRaw(tree)
       case tree: Assign => super.printRaw(tree)
-      case tree: Select => super.printRaw(tree)
+      //access static field defined in java class
+      case tree@Select(qualifier, name) if tree.symbol.isStaticMember =>
+        print(jribbleName(tree.symbol.owner));
+        print(".");
+        print(symName(tree, name));
+      case tree@Select(qualifier, name) =>
+        print(qualifier);
+        print(".("); print(jribbleName(tree.symbol.owner)); print(")");
+        print(symName(tree, name));
       case tree: Apply => super.printRaw(tree)
-      //we can delegate printing of Array literals to super class because it prints it in jribble-friendly
-      //way: Array[Type]{x1, x2, ..., xn}
-      case tree: ArrayValue => super.printRaw(tree)
+      case ArrayValue(elemtpt, trees) =>
+        print("<"); print(elemtpt); printRow(trees, ">{", ", ", "}")
       //TODO(grek): It looks that it's safe to just drop Typed but this should be double checked
       case Typed(expr, _) => print(expr)
         
@@ -480,7 +604,10 @@ with JribbleNormalization
 
     /** load a top-level module */
     def printLoadModule(sym: Symbol) {
-      print(jribbleName(sym)); print("."); print(nme.MODULE_INSTANCE_FIELD)
+      print(jribbleName(sym));
+      if (!sym.isJavaDefined) {
+        print("."); print(nme.MODULE_INSTANCE_FIELD)
+      }
     }
 
     def printParams(xs: List[Tree]): Unit = {
@@ -496,7 +623,13 @@ with JribbleNormalization
     override def printParam(tree: Tree): Unit = tree match {
       case ValDef(mods, name, tp, rhs) =>
         //printAttributes(tree)
-        print(tp.tpe); print(" "); print(symName(tree, name)) 
+        print(tp.tpe); print(" "); print(symName(tree, name))
+    }
+
+    override def printValueParams(ts: List[ValDef]) {
+      print("(")
+      printSeq(ts){printParam}{print(", ")}
+      print(")")
     }
 
     //TODO(grek): Revisit this method and check it against GenJVM.javaFlags method
