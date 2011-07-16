@@ -1,5 +1,5 @@
 /* NSC -- new Scala compiler
- * Copyright 2005-2010 LAMP/EPFL
+ * Copyright 2005-2011 LAMP/EPFL
  * @author  Martin Odersky
  */
 
@@ -8,8 +8,7 @@ package scala.tools.nsc
 package backend
 
 import scala.tools.nsc.backend.icode._
-
-import scala.collection.mutable.{Map, HashMap}
+import scala.collection.{ mutable, immutable }
 
 /**
  * Scala primitive operations are represented as methods in Any and
@@ -91,8 +90,6 @@ abstract class ScalaPrimitives {
   // Any operations
   final val IS = 80                            // x.is[y]
   final val AS = 81                            // x.as[y]
-  final val ISERASED = 85                      // x.is$erased[y]
-  final val ASERASED = 86                      // x.as$erased[y]
   final val HASH = 87                          // x.##
 
   // AnyRef operations
@@ -107,15 +104,15 @@ abstract class ScalaPrimitives {
   // RunTime operations
   final val BOX = 110                          // RunTime.box_<X>(x)
   final val UNBOX = 111                        // RunTime.unbox_<X>(x)
-  final val NEW_ZARRAY = 112                   // RunTime.zarray(x)
-  final val NEW_BARRAY = 113                   // RunTime.barray(x)
-  final val NEW_SARRAY = 114                   // RunTime.sarray(x)
-  final val NEW_CARRAY = 115                   // RunTime.carray(x)
-  final val NEW_IARRAY = 116                   // RunTime.iarray(x)
-  final val NEW_LARRAY = 117                   // RunTime.larray(x)
-  final val NEW_FARRAY = 118                   // RunTime.farray(x)
-  final val NEW_DARRAY = 119                   // RunTime.darray(x)
-  final val NEW_OARRAY = 120                   // RunTime.oarray(x)
+//   final val NEW_ZARRAY = 112                   // RunTime.zarray(x)
+//   final val NEW_BARRAY = 113                   // RunTime.barray(x)
+//   final val NEW_SARRAY = 114                   // RunTime.sarray(x)
+//   final val NEW_CARRAY = 115                   // RunTime.carray(x)
+//   final val NEW_IARRAY = 116                   // RunTime.iarray(x)
+//   final val NEW_LARRAY = 117                   // RunTime.larray(x)
+//   final val NEW_FARRAY = 118                   // RunTime.farray(x)
+//   final val NEW_DARRAY = 119                   // RunTime.darray(x)
+//   final val NEW_OARRAY = 120                   // RunTime.oarray(x)
 
   final val ZARRAY_LENGTH = 131                // RunTime.zarray_length(x)
   final val BARRAY_LENGTH = 132                // RunTime.barray_length(x)
@@ -203,13 +200,11 @@ abstract class ScalaPrimitives {
   final val D2F = 265                          // RunTime.d2f(x)
   final val D2D = 266                          // RunTime.d2d(x)
 
-
-  private var primitives: Map[Symbol, Int] = _
+  private val primitives: mutable.Map[Symbol, Int] = new mutable.HashMap()
 
   /** Initialize the primitive map */
-  def init {
-    primitives = new HashMap()
-
+  def init() {
+    primitives.clear()
     // scala.Any
     addPrimitive(Any_==, EQ)
     addPrimitive(Any_!=, NE)
@@ -484,14 +479,14 @@ abstract class ScalaPrimitives {
 
   /** Check whether the given operation code is an array operation. */
   def isArrayOp(code: Int): Boolean =
-    isArrayNew(code) | isArrayLength(code) | isArrayGet(code) | isArraySet(code)
+    /*isArrayNew(code) |*/ isArrayLength(code) | isArrayGet(code) | isArraySet(code)
 
-  def isArrayNew(code: Int): Boolean = code match {
-    case NEW_ZARRAY | NEW_BARRAY | NEW_SARRAY | NEW_CARRAY |
-         NEW_IARRAY | NEW_LARRAY | NEW_FARRAY | NEW_DARRAY |
-         NEW_OARRAY => true
-    case _ => false
-  }
+//   def isArrayNew(code: Int): Boolean = code match {
+//     case NEW_ZARRAY | NEW_BARRAY | NEW_SARRAY | NEW_CARRAY |
+//          NEW_IARRAY | NEW_LARRAY | NEW_FARRAY | NEW_DARRAY |
+//          NEW_OARRAY => true
+//     case _ => false
+//   }
 
   def isArrayLength(code: Int): Boolean = code match {
     case ZARRAY_LENGTH | BARRAY_LENGTH | SARRAY_LENGTH | CARRAY_LENGTH |
@@ -577,20 +572,18 @@ abstract class ScalaPrimitives {
    *            operations
    */
   def getPrimitive(fun: Symbol, tpe: Type): Int = {
-    import definitions._
-    val code = getPrimitive(fun)
 
-    var elem: Type = null
-    tpe match {
-      case TypeRef(_, sym, _elem :: Nil)
-           if (sym == ArrayClass) => elem = _elem
-      case _ => ()
+    def elementType = atPhase(currentRun.typerPhase) {
+      val arrayParent = tpe :: tpe.parents collectFirst {
+        case TypeRef(_, ArrayClass, elem :: Nil) => elem
+      }
+      arrayParent getOrElse sys.error(fun.fullName + " : " + (tpe :: tpe.baseTypeSeq.toList).mkString(", "))
     }
 
-    code match {
+    getPrimitive(fun) match {
 
       case APPLY =>
-        toTypeKind(elem) match {
+        toTypeKind(elementType) match {
           case BOOL    => ZARRAY_GET
           case BYTE    => BARRAY_GET
           case SHORT   => SARRAY_GET
@@ -601,11 +594,11 @@ abstract class ScalaPrimitives {
           case DOUBLE  => DARRAY_GET
           case REFERENCE(_) | ARRAY(_) => OARRAY_GET
           case _ =>
-            abort("Unexpected array element type: " + elem)
+            abort("Unexpected array element type: " + elementType)
         }
 
       case UPDATE =>
-        toTypeKind(elem) match {
+        toTypeKind(elementType) match {
           case BOOL    => ZARRAY_SET
           case BYTE    => BARRAY_SET
           case SHORT   => SARRAY_SET
@@ -616,12 +609,11 @@ abstract class ScalaPrimitives {
           case DOUBLE  => DARRAY_SET
           case REFERENCE(_) | ARRAY(_) => OARRAY_SET
           case _ =>
-            abort("Unexpected array element type: " + elem)
+            abort("Unexpected array element type: " + elementType)
         }
 
       case LENGTH =>
-        assert(elem != null)
-        toTypeKind(elem) match {
+        toTypeKind(elementType) match {
           case BOOL    => ZARRAY_LENGTH
           case BYTE    => BARRAY_LENGTH
           case SHORT   => SARRAY_LENGTH
@@ -632,10 +624,10 @@ abstract class ScalaPrimitives {
           case DOUBLE  => DARRAY_LENGTH
           case REFERENCE(_) | ARRAY(_) => OARRAY_LENGTH
           case _ =>
-            abort("Unexpected array element type: " + elem)
+            abort("Unexpected array element type: " + elementType)
         }
 
-      case _ =>
+      case code @ _ =>
         code
     }
   }

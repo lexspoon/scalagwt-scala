@@ -1,6 +1,6 @@
 /*                     __                                               *\
 **     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2010, LAMP/EPFL             **
+**    / __/ __// _ | / /  / _ |    (c) 2003-2011, LAMP/EPFL             **
 **  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
 ** /____/\___/_/ |_/____/_/ | |                                         **
 **                          |/                                          **
@@ -107,19 +107,21 @@ object Source {
    */
   def fromBytes(bytes: Array[Byte])(implicit codec: Codec): Source =
     fromString(new String(bytes, codec.name))
-  
+
   def fromBytes(bytes: Array[Byte], enc: String): Source =
     fromBytes(bytes)(Codec(enc))
-  
+
   /** Create a <code>Source</code> from array of bytes, assuming
    *  one byte per character (ISO-8859-1 encoding.)
    */
-  def fromRawBytes(bytes: Array[Byte]): Source = fromString(new String(bytes, Codec.ISO8859.name))
+  def fromRawBytes(bytes: Array[Byte]): Source =
+    fromString(new String(bytes, Codec.ISO8859.name))
 
   /** creates <code>Source</code> from file with given file: URI
    */
-  def fromURI(uri: URI)(implicit codec: Codec): BufferedSource = fromFile(new JFile(uri))(codec)
-  
+  def fromURI(uri: URI)(implicit codec: Codec): BufferedSource =
+    fromFile(new JFile(uri))(codec)
+
   /** same as fromURL(new URL(s))(Codec(enc))
    */
   def fromURL(s: String, enc: String): BufferedSource =
@@ -184,7 +186,6 @@ abstract class Source extends Iterator[Char] {
 
   /** description of this source, default empty */
   var descr: String = ""
-
   var nerrors = 0
   var nwarnings = 0
 
@@ -195,8 +196,9 @@ abstract class Source extends Iterator[Char] {
    *  @return     the specified line.
    *
    */
-  @deprecated("Use a collections method such as getLines().toIndexedSeq for random access.")
-  def getLine(line: Int): String = getLines() drop (line - 1) next
+  @deprecated("Use a collections method such as getLines().toIndexedSeq for random access.", "2.8.0")
+  def getLine(line: Int): String = lineNum(line)
+  private def lineNum(line: Int): String = getLines() drop (line - 1) take 1 mkString
   
   class LineIterator() extends Iterator[String] {
     private[this] val sb = new StringBuilder
@@ -238,8 +240,9 @@ abstract class Source extends Iterator[Char] {
   /** Returns next character.
    */
   def next: Char = positioner.next
-  
-  class Positioner {
+
+  class Positioner(encoder: Position) {
+    def this() = this(RelaxedPosition)
     /** the last character returned by next. */
     var ch: Char = _
 
@@ -255,7 +258,7 @@ abstract class Source extends Iterator[Char] {
 
     def next: Char = {
       ch = iter.next
-      pos = Position.encode(cline, ccol)
+      pos = encoder.encode(cline, ccol)
       ch match {
         case '\n' =>
           ccol = 1
@@ -268,7 +271,14 @@ abstract class Source extends Iterator[Char] {
       ch
     }
   }
-  object NoPositioner extends Positioner {
+  /** A Position implementation which ignores errors in
+   *  the positions.
+   */
+  object RelaxedPosition extends Position {
+    def checkInput(line: Int, column: Int): Unit = ()
+  }
+  object RelaxedPositioner extends Positioner(RelaxedPosition) { }
+  object NoPositioner extends Positioner(Position) {
     override def next: Char = iter.next
   }
   def ch = positioner.ch
@@ -296,10 +306,10 @@ abstract class Source extends Iterator[Char] {
    *  @param out PrintStream to use
    */
   def report(pos: Int, msg: String, out: PrintStream) {
-    val line = Position line pos
-    val col = Position column pos
-    
-    out println "%s:%d:%d: %s%s%s^".format(descr, line, col, msg, getLine(line), spaces(col - 1))
+    val line  = Position line pos
+    val col   = Position column pos
+
+    out println "%s:%d:%d: %s%s%s^".format(descr, line, col, msg, lineNum(line), spaces(col - 1))
   }
 
   /**
@@ -318,7 +328,7 @@ abstract class Source extends Iterator[Char] {
   
   private[this] var resetFunction: () => Source = null
   private[this] var closeFunction: () => Unit = null
-  private[this] var positioner: Positioner = new Positioner
+  private[this] var positioner: Positioner = RelaxedPositioner
   
   def withReset(f: () => Source): this.type = {
     resetFunction = f
@@ -332,17 +342,21 @@ abstract class Source extends Iterator[Char] {
     descr = text
     this
   }
-  // we'd like to default to no positioning, but for now we break
-  // less by defaulting to status quo.
+  /** Change or disable the positioner. */
   def withPositioning(on: Boolean): this.type = {
-    positioner = if (on) new Positioner else NoPositioner
+    positioner = if (on) RelaxedPositioner else NoPositioner
+    this
+  }
+  def withPositioning(pos: Positioner): this.type = {
+    positioner = pos
     this
   }
 
   /** The close() method closes the underlying resource. */
-  def close(): Unit     =
+  def close() {
     if (closeFunction != null) closeFunction()
-    
+  }
+
   /** The reset() method creates a fresh copy of this Source. */
   def reset(): Source = 
     if (resetFunction != null) resetFunction()
