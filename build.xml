@@ -165,7 +165,9 @@ PROPERTIES
   <property name="jline.jar" value="${lib.dir}/jline.jar"/>
   <property name="ant.jar" value="${ant.home}/lib/ant.jar"/>
   <property name="scalacheck.jar" value="${lib.dir}/scalacheck.jar"/>
-
+  <property name="protobuf.jar" value="${lib.dir}/protobuf-java-2.2.0.jar"/>
+  <property name="jribble.jar" value="${lib.dir}/jribble-protos.jar"/>
+	  
   <!-- Sets location of build folders -->
   <property name="build.dir" value="${basedir}/build"/>
   <property name="build-locker.dir" value="${build.dir}/locker"/>
@@ -360,6 +362,8 @@ LOCAL REFERENCE BUILD (LOCKER)
         <pathelement location="${build-locker.dir}/classes/compiler"/>
         <path refid="aux.libs"/>
         <pathelement location="${jline.jar}"/>
+        <pathelement location="${protobuf.jar}"/>
+        <pathelement location="${jribble.jar}"/>
       </compilationpath>
     </scalacfork>
     <propertyfile file="${build-locker.dir}/classes/compiler/compiler.properties">
@@ -475,6 +479,8 @@ QUICK BUILD (QUICK)
       <pathelement location="${msil.jar}"/>
       <pathelement location="${forkjoin.jar}"/>
       <pathelement location="${ant.jar}"/>
+      <pathelement location="${protobuf.jar}"/>
+      <pathelement location="${jribble.jar}"/>
     </path>
   </target>
 
@@ -656,6 +662,8 @@ QUICK BUILD (QUICK)
         <pathelement location="${build-quick.dir}/classes/compiler"/>
         <path refid="aux.libs"/>
         <pathelement location="${jline.jar}"/>
+        <pathelement location="${protobuf.jar}"/>
+        <pathelement location="${jribble.jar}"/>
       </compilationpath>
     </scalacfork>
     <propertyfile file="${build-quick.dir}/classes/compiler/compiler.properties">
@@ -834,6 +842,8 @@ QUICK BUILD (QUICK)
       <pathelement location="${build-quick.dir}/classes/scalap"/>
       <path refid="aux.libs"/>
       <pathelement location="${jline.jar}"/>
+      <pathelement location="${protobuf.jar}"/>
+      <pathelement location="${jribble.jar}"/>
     </path>
     <taskdef name="quick-bin" classname="scala.tools.ant.ScalaTool" classpathref="quick.bin.classpath"/>
     <mkdir dir="${build-quick.dir}/bin"/>
@@ -954,6 +964,9 @@ PACKED QUICK BUILD (PACK)
       <zipfileset dirmode="755" filemode="644" src="${msil.jar}"/>
     </jar>
     <copy file="${jline.jar}" toDir="${build-pack.dir}/lib"/>
+    <copy file="${protobuf.jar}" toDir="${build-pack.dir}/lib"/>
+    <copy file="${jribble.jar}" toDir="${build-pack.dir}/lib"/>
+
     <copy todir="${build-pack.dir}/lib">
       <fileset dir="${lib-extra.dir}">
         <include name="**/*.jar"/>
@@ -1470,6 +1483,25 @@ LIBRARIES (MSIL, FJBG maybe later)
   <target name="libs.fjbgpack" depends="libs.pre-fjbgpack" unless="libs.fjbgpack.available">
     <jar destfile="${build-libs.dir}/fjbg.jar">
       <fileset dir="${build-libs.dir}/classes/fjbg"/>
+    </jar>
+  </target>
+	
+  <target name="libs.jribble">
+    <mkdir dir="${build-libs.dir}/classes/jribble"/>
+    <javac
+      srcdir="${src.dir}/jribble"
+      destdir="${build-libs.dir}/classes/jribble"
+      classpath="${protobuf.jar}"
+      includes="**/*.java"
+      debug="true"
+      target="1.5" source="1.5">
+        <compilerarg line="${javac.args}"/>
+    </javac>
+  </target>
+
+  <target name="libs.jribblepack" depends="libs.jribble">
+    <jar destfile="${build-libs.dir}/jribble-protos.jar">
+      <fileset dir="${build-libs.dir}/classes/jribble"/>
     </jar>
   </target>
 

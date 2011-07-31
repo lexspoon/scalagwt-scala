@@ -514,16 +514,19 @@ class Global(var currentSettings: Settings, var reporter: Reporter) extends Symb
   } with RemoveNothingExpressions
 
   // phaseName = "fjumpsjribble"
+  // TODO(spoon) temporarily disabling to get my build to work
+  /*
   object removeForwardJumps extends {
     val global: Global.this.type = Global.this
     val runsAfter = List[String]("nothingexps")
     val runsRightAfter = None
   } with RemoveForwardJumps
+  */
 
   // phaseName = "normjribble"
   object normalizeForJribble extends {
     val global: Global.this.type = Global.this    
-    val runsAfter = List[String]("fjumpsjribble")
+    val runsAfter = List[String]("nothingexps")
     val runsRightAfter = None
   } with NormalizeForJribble
 

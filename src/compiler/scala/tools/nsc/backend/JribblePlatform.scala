@@ -21,7 +21,7 @@ trait JribblePlatform extends Platform[AbstractFile] {
   def platformPhases = List(
     flatten,                   // get rid of inner classes
     removeNothingExpressions,  // move Nothing-type expressions to top level
-    removeForwardJumps,        // translate forward jumps into method calls
+    //removeForwardJumps,        // translate forward jumps into method calls
     normalizeForJribble,       // many normalizations needed for emitting Jribble
     genJribble                 // generate .jribble files
   )

@@ -7,13 +7,19 @@
 \*                                                                      */
 
 // $Id$
-package scala.tools.nsc
-package backend.jribble
-import symtab.SymbolTable
+package scala.tools.nsc.backend.jribble
+
+import scala.tools.nsc._
+import scala.tools.nsc.symtab.SymbolTable
+import scala.tools.nsc.symtab.Flags._
+
 import scala.collection.mutable
+
 
 /**
  * Analyses that are used by {@link GenJribble}.
+ * 
+ * TODO(spoon) rename the file to have just one r
  */
 trait JribbleAnalysis {
   val global: Global
@@ -102,4 +108,18 @@ trait JribbleAnalysis {
     }
     return treeTypeReturnable(tree) && typeReturnable(tree.tpe)
   }
+  
+  def isInterface(sym: Symbol): Boolean = sym.hasFlag(INTERFACE)
+  
+  //copied from GenJVM
+  def isStaticModule(sym: Symbol): Boolean = {
+    import scala.reflect.generic.Flags
+    sym.isModuleClass && !sym.isImplClass && !sym.hasFlag(Flags.LIFTED)
+  }
+
+  //copied from GenJVM
+  def isTopLevelModule(sym: Symbol): Boolean =
+    atPhase (currentRun.picklerPhase.next) {
+      sym.isModuleClass && !sym.isImplClass && !sym.isNestedClass
+    }
 }
